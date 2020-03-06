@@ -4,10 +4,8 @@ namespace markhuot\CraftQL\Controllers;
 
 use Craft;
 use craft\web\Controller;
-use craft\records\User;
 use markhuot\CraftQL\CraftQL;
 use markhuot\CraftQL\Models\Token;
-use yii\web\ForbiddenHttpException;
 
 class ApiController extends Controller
 {
@@ -15,6 +13,16 @@ class ApiController extends Controller
 
     private $graphQl;
     private $request;
+
+    function __construct(
+        $id,
+        $module,
+        \markhuot\CraftQL\Services\GraphQLService $graphQl,
+        $config = []
+    ) {
+        parent::__construct($id, $module, $config);
+        $this->graphQl = $graphQl;
+    }
 
     /**
      * @inheritdoc
@@ -28,40 +36,52 @@ class ApiController extends Controller
     }
 
     function actionDebug() {
+        $instance = \markhuot\CraftQL\CraftQL::getInstance();
+
         $oldMode = \Craft::$app->getView()->getTemplateMode();
         \Craft::$app->getView()->setTemplateMode(\craft\web\View::TEMPLATE_MODE_CP);
-        $data = $this->getView()->renderPageTemplate('craftql/debug-input', []);
+        $data = $this->getView()->renderPageTemplate('craftql/debug-input', [
+            'uri' => $instance->getSettings()->uri,
+        ]);
         \Craft::$app->getView()->setTemplateMode($oldMode);
         return $data;
     }
 
     function actionIndex()
     {
-        $response = \Craft::$app->getResponse();
+        $token = false;
 
         $authorization = Craft::$app->request->headers->get('authorization');
         preg_match('/^(?:b|B)earer\s+(?<tokenId>.+)/', $authorization, $matches);
-        $token = Token::findOrAnonymous(@$matches['tokenId']);
+        $token = Token::findId(@$matches['tokenId']);
 
-        if ($user = $token->getUser()) {
-            $response->headers->add('Authorization', 'Bearer ' . CraftQL::getInstance()->jwt->tokenForUser($user));
-        }
+        // @todo, check user permissions when PRO license
 
+        $response = \Craft::$app->getResponse();
         if ($allowedOrigins = CraftQL::getInstance()->getSettings()->allowedOrigins) {
             if (is_string($allowedOrigins)) {
                 $allowedOrigins = [$allowedOrigins];
             }
             $origin = \Craft::$app->getRequest()->headers->get('Origin');
             if (in_array($origin, $allowedOrigins) || in_array('*', $allowedOrigins)) {
-                $response->headers->add('Access-Control-Allow-Origin', $origin);
+                $response->headers->set('Access-Control-Allow-Origin', $origin);
             }
-            $response->headers->add('Access-Control-Allow-Credentials', 'true');
-            $response->headers->add('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+            $response->headers->set('Access-Control-Allow-Credentials', 'true');
+            $response->headers->set('Access-Control-Allow-Headers', implode(', ', CraftQL::getInstance()->getSettings()->allowedHeaders));
         }
-        $response->headers->add('Allow', implode(', ', CraftQL::getInstance()->getSettings()->verbs));
+        $response->headers->set('Allow', implode(', ', CraftQL::getInstance()->getSettings()->verbs));
 
         if (\Craft::$app->getRequest()->isOptions) {
             return '';
+        }
+
+        if (!$token) {
+            http_response_code(403);
+            return $this->asJson([
+                'errors' => [
+                    ['message' => 'Not authorized']
+                ]
+            ]);
         }
 
         Craft::debug('CraftQL: Parsing request');
@@ -91,15 +111,15 @@ class ApiController extends Controller
         Craft::debug('CraftQL: Parsing request complete');
 
         Craft::debug('CraftQL: Bootstrapping');
-        CraftQL::getInstance()->graphQl->bootstrap();
+        $this->graphQl->bootstrap();
         Craft::debug('CraftQL: Bootstrapping complete');
 
         Craft::debug('CraftQL: Fetching schema');
-        $schema = CraftQL::getInstance()->graphQl->getSchema($token);
+        $schema = $this->graphQl->getSchema($token);
         Craft::debug('CraftQL: Schema built');
 
         Craft::debug('CraftQL: Executing query');
-        $result = CraftQL::getInstance()->graphQl->execute($schema, $input, $variables);
+        $result = $this->graphQl->execute($schema, $input, $variables);
         Craft::debug('CraftQL: Execution complete');
 
         $customHeaders = CraftQL::getInstance()->getSettings()->headers ?: [];

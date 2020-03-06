@@ -4,9 +4,13 @@ namespace markhuot\CraftQL\Models;
 
 use Craft;
 use craft\db\ActiveRecord;
+<<<<<<< HEAD
 use Firebase\JWT\ExpiredException;
 use GraphQL\Error\UserError;
 use markhuot\CraftQL\CraftQL;
+=======
+use craft\records\User;
+>>>>>>> master
 
 class Token extends ActiveRecord
 {

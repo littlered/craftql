@@ -9,9 +9,15 @@
         "craft-plugin"
     ],
     "require": {
+<<<<<<< HEAD
         "webonyx/graphql-php": "^0.12.0",
         "react/http": "^0.7",
         "firebase/php-jwt": "^5.0.0"
+=======
+        "craftcms/cms": "^3.2.0",
+        "webonyx/graphql-php": "^0.12.0",
+        "react/http": "^0.7"
+>>>>>>> master
     },
     "authors": [
         {
